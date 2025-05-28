@@ -60,8 +60,7 @@ def format_dB(num):
 
 class ArgumentNamespace(SimpleNamespace):
     """
-    Namespace object that also behaves like a dictionary, but is not
-    iterable.
+    Namespace object that also behaves like a dictionary.
 
     Usecase is as a wrapper for the dictionary returned from
     `FritzConnection.call_action()`. This dictionary has keys named
@@ -114,35 +113,126 @@ class ArgumentNamespace(SimpleNamespace):
     If no mapping is given, then `ArgumentNamespace` will consume the
     provided dictionary converting all keys from "MixedCase" style to
     "snake_case" removing the leading "new_" (removing "new_" can get
-    turned of by setting `suppress_new` to `False`): ::
+    turned off by setting `suppress_new` to `False`): ::
 
         >>> info = ArgumentNamespace(result)
         >>> info.up_time
         9516949
 
+    The class provides dictionary-like methods such as `get()`, `keys()`,
+    `values()`, and `items()`: ::
+
+        >>> info.get('model_name')
+        'FRITZ!Box 7590'
+        >>> info.get('not_existing_key', 'default_value')
+        'default_value'
+        >>> list(info.keys())
+        ['model_name', 'serial_number', 'up_time', ...]
+        >>> list(info.values())
+        ['FRITZ!Box 7590', '989BCB2B93B0', 9516949, ...]
+        
+    The class also supports containment check with the 'in' operator: ::
+    
+        >>> 'model_name' in info
+        True
+        >>> 'non_existent' in info
+        False
     """
     def __init__(self, source, mapping=None, suppress_new=True):
-        source["NewModelName"] = "NewModelName"
+        """
+        Initialize the ArgumentNamespace with a source dictionary.
+        
+        Args:
+            source: Dictionary with the original data
+            mapping: Optional mapping of attribute names to source keys
+            suppress_new: Whether to remove 'new_' prefix from attribute names
+        """
         if mapping is None:
-            mapping = {
-                "model_name": "NewModelName",
-                "new_serial_number": "NewSerialNumber",
-                "new_model_name": "NewModelName"
-            }
-        super().__init__(
-            **{name: source[attribute] for name, attribute in mapping.items()}
-        )
+            # Auto-generate mapping if none provided
+            mapping = {}
+            for key in source:
+                converted_key = self.rewrite_argument(key, suppress_new)
+                mapping[converted_key] = key
+        
+        # Create attributes from source data using the mapping
+        kwargs = {name: source[source_key] for name, source_key in mapping.items()}
+        super().__init__(**kwargs)
 
     def __getitem__(self, key):
+        """Get an item using dictionary access syntax."""
         return getattr(self, key)
 
     def __setitem__(self, key, value):
+        """Set an item using dictionary access syntax."""
         setattr(self, key, value)
 
     def __len__(self):
-        # should provide len() as dict-like object
+        """Return the number of attributes."""
         return len(self.__dict__)
+    
+    def __contains__(self, key):
+        """Check if a key exists in the namespace."""
+        return key in self.__dict__
+    
+    def __iter__(self):
+        """Allow iteration over keys."""
+        return iter(self.__dict__)
+    
+    def __repr__(self):
+        """Return a string representation of the namespace."""
+        items = [f"{k}={v!r}" for k, v in self.__dict__.items()]
+        return f"{self.__class__.__name__}({', '.join(items)})"
 
+    def get(self, key, default=None):
+        """
+        Return the value for key if key is in the namespace, else default.
+        
+        Args:
+            key: The key to look up
+            default: Value to return if key is not found (default: None)
+            
+        Returns:
+            The value for the key if found, else default
+        """
+        try:
+            return self[key]
+        except AttributeError:
+            return default
+
+    def keys(self):
+        """Return a view object containing the keys in the namespace."""
+        return self.__dict__.keys()
+
+    def values(self):
+        """Return a view object containing the values in the namespace."""
+        return self.__dict__.values()
+
+    def items(self):
+        """Return a view object containing (key, value) pairs in the namespace."""
+        return self.__dict__.items()
+    
+    def update(self, *args, **kwargs):
+        """
+        Update the namespace with a dictionary, another namespace, or keyword arguments.
+        
+        Args:
+            *args: A dictionary or another ArgumentNamespace to update from
+            **kwargs: Keyword arguments to update from
+        """
+        if args:
+            other = args[0]
+            if isinstance(other, dict):
+                for key, value in other.items():
+                    setattr(self, key, value)
+            elif isinstance(other, ArgumentNamespace):
+                for key, value in other.__dict__.items():
+                    setattr(self, key, value)
+            else:
+                raise TypeError(f"Expected dict or ArgumentNamespace, got {type(other).__name__}")
+        
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+            
     @staticmethod
     def rewrite_argument(name, suppress_new=True):
         """
@@ -150,13 +240,25 @@ class ArgumentNamespace(SimpleNamespace):
         would converted to "mixed_case". The result may start with
         "new_" in case of AVM standard argument names. if `suppress_new`
         is `True` the prefix "new_" will get removed.
+        
+        Args:
+            name: The name to convert
+            suppress_new: Whether to remove the 'new_' prefix
+            
+        Returns:
+            The name in snake_case format
         """
-        new = "new"
-        result = " ".join(
-            f"_{char.lower()}" if char.isupper() else char for char in name
-        )
-        if result.startswith("_"):
-            result = result[::-1]
-        if suppress_new and result.startswith(new):
-            result = result[len(new):]
+        # Convert MixedCase to snake_case
+        chars = []
+        for i, char in enumerate(name):
+            if i > 0 and char.isupper() and not name[i-1].isupper():
+                chars.append('_')
+            chars.append(char.lower())
+        
+        result = ''.join(chars)
+        
+        # Handle special case for names starting with "new_"
+        if suppress_new and result.startswith("new_"):
+            result = result[4:]  # Remove 'new_'
+            
         return result
