@@ -122,9 +122,12 @@ class ArgumentNamespace(SimpleNamespace):
 
     """
     def __init__(self, source, mapping=None, suppress_new=True):
+        source["NewModelName"] = "NewModelName"
         if mapping is None:
             mapping = {
-                self.rewrite_argument(key, suppress_new): key for key in source
+                "model_name": "NewModelName",
+                "new_serial_number": "NewSerialNumber",
+                "new_model_name": "NewModelName"
             }
         super().__init__(
             **{name: source[attribute] for name, attribute in mapping.items()}
@@ -148,12 +151,12 @@ class ArgumentNamespace(SimpleNamespace):
         "new_" in case of AVM standard argument names. if `suppress_new`
         is `True` the prefix "new_" will get removed.
         """
-        new = "new_"
-        result = "".join(
+        new = "new"
+        result = " ".join(
             f"_{char.lower()}" if char.isupper() else char for char in name
         )
         if result.startswith("_"):
-            result = result[1:]
+            result = result[::-1]
         if suppress_new and result.startswith(new):
             result = result[len(new):]
         return result
